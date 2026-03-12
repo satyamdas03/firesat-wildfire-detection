@@ -1,0 +1,22 @@
+services:
+  # ── Node.js Ground Station Dashboard (Web Service) ──
+  - type: web
+    name: firesat-dashboard
+    runtime: node
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+  # ── Python Satellite AI (Background Worker) ──
+  - type: worker
+    name: firesat-satellite-ai
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python satellite_ai.py
+    envVars:
+      - key: NASA_MAP_KEY
+        sync: false  # You'll set this in the Render dashboard
+      - key: GROUND_STATION_URL
+        sync: false  # Set to https://firesat-dashboard.onrender.com/api/alert

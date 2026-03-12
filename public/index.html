@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FireSat Global Command Center | Real-Time Wildfire Detection</title>
+    <meta name="description" content="Real-time global wildfire detection system powered by Edge AI on CubeSats" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+
+    <style>
+        :root {
+            --bg:         #080b14;
+            --panel:      rgba(11, 16, 28, 0.90);
+            --border:     rgba(0, 220, 255, 0.15);
+            --neon-blue:  #00dcff;
+            --neon-red:   #ff3535;
+            --neon-orange:#ff9933;
+            --green:      #00e676;
+            --text:       #dde4f0;
+            --muted:      #6b7898;
+            --panel-r:    8px;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        #map { position: absolute; inset: 0; z-index: 1; }
+
+        /* ─── Panels ─── */
+        .panel {
+            position: absolute;
+            z-index: 100;
+            background: var(--panel);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--border);
+            border-radius: var(--panel-r);
+            padding: 18px 20px;
+            box-shadow: 0 8px 40px rgba(0,0,0,.6);
+        }
+
+        /* ─── Header ─── */
+        #header { top: 18px; left: 18px; width: 300px; }
+
+        #header h1 {
+            font-size: 18px; font-weight: 700; letter-spacing: 1.5px;
+            text-transform: uppercase; color: var(--neon-blue);
+            text-shadow: 0 0 14px rgba(0,220,255,.5);
+        }
+
+        .status-row {
+            display: flex; align-items: center; gap: 8px;
+            margin-top: 6px; font-size: 11px; color: var(--muted);
+        }
+        .dot-live {
+            width: 7px; height: 7px; background: var(--green);
+            border-radius: 50%; box-shadow: 0 0 6px var(--green);
+            animation: blink 1.5s infinite;
+        }
+        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+        .stats-grid {
+            display: grid; grid-template-columns: 1fr 1fr 1fr;
+            gap: 8px; margin-top: 14px;
+        }
+        .stat { background: rgba(0,0,0,.35); padding: 10px 6px; border-radius: 6px; text-align: center; }
+        .stat-val { font-size: 22px; font-weight: 700; font-family: 'JetBrains Mono'; color: var(--neon-orange); }
+        .stat-lbl { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; margin-top: 2px; }
+
+        /* ─── Regions Sidebar ─── */
+        #regions { top: 18px; right: 18px; width: 220px; }
+        #regions h2 { font-size: 10px; text-transform: uppercase; letter-spacing: 2px; color: var(--muted); margin-bottom: 12px; }
+
+        .region-item {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-bottom: 9px; font-size: 12px;
+        }
+        .region-bar-wrap { flex: 1; height: 4px; background: rgba(255,255,255,.08); border-radius: 2px; margin: 0 10px; }
+        .region-bar { height: 100%; background: var(--neon-red); border-radius: 2px; transition: width .6s ease; }
+        .region-count { font-family: 'JetBrains Mono'; font-size: 11px; color: var(--neon-orange); min-width: 24px; text-align: right; }
+
+        /* ─── Alert Feed ─── */
+        #feed { bottom: 18px; right: 18px; width: 380px; max-height: 380px; display: flex; flex-direction: column; }
+        #feed h2 { font-size: 10px; text-transform: uppercase; letter-spacing: 2px; color: var(--muted);
+                   padding-bottom: 10px; border-bottom: 1px solid var(--border); margin-bottom: 12px; }
+
+        #alert-list { overflow-y: auto; flex: 1; padding-right: 4px; }
+        #alert-list::-webkit-scrollbar { width: 4px; }
+        #alert-list::-webkit-scrollbar-thumb { background: rgba(0,220,255,.2); border-radius: 2px; }
+
+        .alert-card {
+            border-left: 3px solid var(--neon-red);
+            background: rgba(255, 53, 53, 0.05);
+            padding: 10px 12px; border-radius: 0 6px 6px 0;
+            margin-bottom: 8px; animation: slideIn .35s ease-out;
+            cursor: pointer; transition: background .2s;
+        }
+        .alert-card:hover { background: rgba(255,53,53,.12); }
+        @keyframes slideIn { from{opacity:0;transform:translateY(-14px)} to{opacity:1;transform:none} }
+
+        .alert-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
+        .alert-badge { font-size: 11px; font-weight: 700; color: var(--neon-red); text-transform: uppercase; }
+        .alert-time  { font-size: 10px; color: var(--muted); font-family: 'JetBrains Mono'; }
+        .alert-meta  { font-size: 11px; color: #9daac8; line-height: 1.6; }
+        .alert-meta b { color: var(--text); }
+        .alert-intensity { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; margin-left: 4px; }
+        .low  { background: rgba(255,153,51,.2); color: #ffa94d; }
+        .med  { background: rgba(255,80,50,.2);  color: #ff6040; }
+        .high { background: rgba(255,30,30,.3);  color: #ff3535; animation: pulse-badge 1.5s infinite; }
+        @keyframes pulse-badge { 0%,100%{opacity:1} 50%{opacity:.5} }
+
+        /* ─── Legend ─── */
+        #legend { bottom: 18px; left: 18px; padding: 12px 16px; }
+        #legend h2 { font-size: 10px; text-transform: uppercase; letter-spacing: 2px; color: var(--muted); margin-bottom: 10px; }
+        .legend-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 11px; }
+        .legend-dot { border-radius: 50%; }
+
+        /* ─── Map fire markers ─── */
+        .fire-marker { border-radius: 50%; opacity: .85; animation: fire-pulse 2.2s infinite; }
+        @keyframes fire-pulse {
+            0%  { transform:scale(.85); box-shadow:0 0 0 0 rgba(255,53,53,.8); }
+            70% { transform:scale(1.4); box-shadow:0 0 0 12px rgba(255,53,53,0); }
+            100%{ transform:scale(.85); box-shadow:0 0 0 0 rgba(255,53,53,0); }
+        }
+        .fire-high { background: #ff1a1a; box-shadow: 0 0 18px #ff1a1a; }
+        .fire-med  { background: #ff6633; box-shadow: 0 0 12px #ff6633; }
+        .fire-low  { background: #ffaa33; box-shadow: 0 0 8px #ffaa33; }
+    </style>
+</head>
+<body>
+<div id="map"></div>
+
+<!-- Header / Stats -->
+<div id="header" class="panel">
+    <h1>🛰 FireSat Command Center</h1>
+    <div class="status-row">
+        <span class="dot-live"></span>
+        <span>LIVE · VIIRS GLOBAL UPLINK</span>
+    </div>
+    <div class="stats-grid">
+        <div class="stat"><div class="stat-val" id="s-count">0</div><div class="stat-lbl">Anomalies</div></div>
+        <div class="stat"><div class="stat-val" id="s-latency">--</div><div class="stat-lbl">Latency ms</div></div>
+        <div class="stat"><div class="stat-val" id="s-frp">--</div><div class="stat-lbl">Max FRP MW</div></div>
+    </div>
+</div>
+
+<!-- Regional Stats -->
+<div id="regions" class="panel">
+    <h2>🌍 Top Burning Regions</h2>
+    <div id="region-list"><div style="color:var(--muted);font-size:11px;">Awaiting data...</div></div>
+</div>
+
+<!-- Alert Feed -->
+<div id="feed" class="panel">
+    <h2>🔥 Live Anomaly Feed</h2>
+    <div id="alert-list">
+        <div class="alert-card" style="border-color:var(--neon-blue);background:rgba(0,220,255,.04)">
+            <div class="alert-top">
+                <span class="alert-badge" style="color:var(--neon-blue)">SYSTEM</span>
+            </div>
+            <div class="alert-meta">Waiting for CubeSat telemetry...</div>
+        </div>
+    </div>
+</div>
+
+<!-- Legend -->
+<div id="legend" class="panel">
+    <h2>Fire Intensity (FRP MW)</h2>
+    <div class="legend-row"><div class="legend-dot fire-marker fire-high" style="width:18px;height:18px;"></div> &gt; 200 MW — Extreme</div>
+    <div class="legend-row"><div class="legend-dot fire-marker fire-med"  style="width:14px;height:14px;"></div> 50–200 MW — High</div>
+    <div class="legend-row"><div class="legend-dot fire-marker fire-low"  style="width:10px;height:10px;"></div> &lt; 50 MW — Moderate</div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+// ─── Map Init (World View) ────────────────────────────────────────────
+const map = L.map('map', { zoomControl: false, attributionControl: false })
+             .setView([15, 10], 2);   // World-centered view
+
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    maxZoom: 18, subdomains: 'abcd'
+}).addTo(map);
+
+// ─── State ────────────────────────────────────────────────────────────
+let alertCount = 0, maxFrp = 0;
+const markers = [];
+const regionCounts = {};
+
+function frpClass(frp) {
+    if (frp > 200) return 'fire-high';
+    if (frp > 50)  return 'fire-med';
+    return 'fire-low';
+}
+function frpLabel(frp) {
+    if (frp > 200) return 'high';
+    if (frp > 50)  return 'med';
+    return 'low';
+}
+function frpSize(frp) {
+    if (frp > 200) return 22;
+    if (frp > 50)  return 16;
+    return 11;
+}
+
+// ─── Render Alert ─────────────────────────────────────────────────────
+function renderAlert(data, prepend = true) {
+    if (alertCount === 0) document.getElementById('alert-list').innerHTML = '';
+    alertCount++;
+
+    const lat = data.coordinates?.latitude ?? 0;
+    const lon = data.coordinates?.longitude ?? 0;
+    const frp = data.fire_intensity ?? 30;
+    const conf = ((data.confidence ?? 0) * 100).toFixed(1);
+    const country = data.country ?? 'Unknown';
+    const ms = data.processing_time_ms ?? '--';
+    const t = data.timestamp ? new Date(data.timestamp * 1000).toLocaleTimeString() : '--';
+    const cls = frpClass(frp);
+    const lbl = frpLabel(frp);
+
+    // ─ Update header stats
+    document.getElementById('s-count').textContent = alertCount;
+    document.getElementById('s-latency').textContent = ms;
+    if (frp > maxFrp) { maxFrp = frp; document.getElementById('s-frp').textContent = Math.round(frp); }
+
+    // ─ Update regions
+    const cc = country.split(',').pop().trim();
+    regionCounts[cc] = (regionCounts[cc] || 0) + 1;
+    renderRegions();
+
+    // ─ Map marker
+    const sz = frpSize(frp);
+    const icon = L.divIcon({
+        className: '',
+        html: `<div class="fire-marker ${cls}" style="width:${sz}px;height:${sz}px;"></div>`,
+        iconSize: [sz, sz], iconAnchor: [sz/2, sz/2]
+    });
+    const marker = L.marker([lat, lon], { icon }).addTo(map);
+    marker.bindPopup(`
+        <b>${country}</b><br>
+        🔥 Confidence: ${conf}%<br>
+        ⚡ FRP: ${frp} MW<br>
+        🛰 ${data.satellite_id ?? 'CubeSat'}
+    `);
+    markers.push(marker);
+
+    // ─ Alert card
+    const card = document.createElement('div');
+    card.className = 'alert-card';
+    card.innerHTML = `
+        <div class="alert-top">
+            <span class="alert-badge">🔥 Ignition</span>
+            <span class="alert-time">${t}</span>
+        </div>
+        <div class="alert-meta">
+            <b>${country}</b><br>
+            Sat: ${data.satellite_id ?? 'CubeSat-1'}<br>
+            Loc: [${lat.toFixed(3)}, ${lon.toFixed(3)}]<br>
+            Confidence: ${conf}%
+            <span class="alert-intensity ${lbl}">${frp} MW</span><br>
+            AI inference: <span style="color:var(--neon-blue)">${ms}ms</span>
+        </div>
+    `;
+    card.onclick = () => { map.flyTo([lat, lon], 7, { duration: 1.5 }); marker.openPopup(); };
+
+    const list = document.getElementById('alert-list');
+    if (prepend) list.insertBefore(card, list.firstChild);
+    else list.appendChild(card);
+}
+
+function renderRegions() {
+    const sorted = Object.entries(regionCounts).sort((a,b)=>b[1]-a[1]).slice(0,8);
+    const max = sorted[0]?.[1] || 1;
+    const html = sorted.map(([region, count]) =>
+        `<div class="region-item">
+            <span style="font-size:11px;min-width:40px">${region}</span>
+            <div class="region-bar-wrap"><div class="region-bar" style="width:${(count/max*100).toFixed(0)}%"></div></div>
+            <span class="region-count">${count}</span>
+         </div>`
+    ).join('');
+    document.getElementById('region-list').innerHTML = html || '<div style="color:var(--muted);font-size:11px">No data yet</div>';
+}
+
+// ─── Socket ───────────────────────────────────────────────────────────
+const socket = io();
+
+socket.on('new_fire_alert', data => {
+    renderAlert(data, true);
+    // Gently pan to the new fire
+    map.flyTo([data.coordinates?.latitude, data.coordinates?.longitude], Math.max(map.getZoom(), 4), {
+        animate: true, duration: 1.8
+    });
+});
+
+socket.on('alert_history', history => {
+    [...history].reverse().forEach(d => renderAlert(d, false));
+    if (history.length > 0) {
+        const last = history[0];
+        map.flyTo([last.coordinates?.latitude, last.coordinates?.longitude], 4, { duration: 2 });
+    }
+});
+</script>
+</body>
+</html>

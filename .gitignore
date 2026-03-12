@@ -1,0 +1,10 @@
+node_modules/
+venv/
+__pycache__/
+*.pyc
+.env
+models/
+dataset/
+*.pth
+test_firms.py
+download_dataset.py
