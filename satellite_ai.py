@@ -233,7 +233,7 @@ def observe_and_downlink(lat, lon, frp, acq_time, image_path):
         }
 
         try:
-            requests.post(GROUND_STATION_URL, json=payload, timeout=2)
+            requests.post(GROUND_STATION_URL, json=payload, timeout=10)
             print("   📡 Downlinked to Ground Station ✓")
         except Exception as e:
             print(f"   ⚠️  Downlink failed: {e}")
